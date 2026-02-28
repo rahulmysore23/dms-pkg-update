@@ -2,7 +2,7 @@
     "$schema": "https://github.com/AvengeMedia/DankMaterialShell/raw/refs/heads/master/PLUGINS/plugin-schema.json",
     "id": "pkgUpdate",
     "name": "Package Updates",
-    "description": "Check and manage DNF and Flatpak package updates from the bar.",
+    "description": "Check and manage APT/DNF system package, Flatpak, and Snap updates from the bar.",
     "version": "1.0.0",
     "author": "Rahul Mysore",
     "license": "MIT",

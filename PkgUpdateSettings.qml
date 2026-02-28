@@ -18,7 +18,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Configure how DNF and Flatpak updates are checked and applied."
+        text: "Configure how system package, Flatpak, and Snap updates are checked and applied."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
@@ -43,10 +43,25 @@ PluginSettings {
         leftIcon: "schedule"
     }
 
+    StringSetting {
+        settingKey: "backendMode"
+        label: "Package Backend"
+        description: "Backend for system updates: 'auto' (prefer apt, fallback to dnf), 'apt', or 'dnf'."
+        defaultValue: "auto"
+        placeholder: "auto"
+    }
+
     ToggleSetting {
         settingKey: "showFlatpak"
         label: "Show Flatpak Updates"
-        description: "Check and display Flatpak application updates alongside DNF packages."
+        description: "Check and display Flatpak application updates alongside system packages."
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        settingKey: "showSnap"
+        label: "Show Snap Updates"
+        description: "Check and display Snap application updates alongside system packages."
         defaultValue: true
     }
 }
