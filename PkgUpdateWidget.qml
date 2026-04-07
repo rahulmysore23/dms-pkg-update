@@ -13,6 +13,8 @@ PluginComponent {
     property var flatpakUpdates: []
     property bool dnfChecking: true
     property bool flatpakChecking: true
+    property bool dnfListComplete: false
+    property bool flatpakListComplete: false
 
     // ── Settings (from plugin data) ───────────────────────────────────────────
     property string terminalApp: pluginData.terminalApp || "alacritty"
@@ -23,6 +25,38 @@ PluginComponent {
 
     popoutWidth: 480
 
+    // ── Debounce timer for height animations ─────────────────────────────────
+    property int pendingDnfHeight: 0
+    property int pendingFlatpakHeight: 0
+
+    Timer {
+        id: dnfHeightDebounce
+        interval: 150
+        onTriggered: {
+            if (root.dnfChecking) {
+                dnfContainer.height = 52
+            } else if (root.dnfUpdates.length === 0) {
+                dnfContainer.height = 46
+            } else {
+                dnfContainer.height = Math.min(root.dnfUpdates.length * 38 + 8, 180)
+            }
+        }
+    }
+
+    Timer {
+        id: flatpakHeightDebounce
+        interval: 150
+        onTriggered: {
+            if (root.flatpakChecking) {
+                flatpakContainer.height = 52
+            } else if (root.flatpakUpdates.length === 0) {
+                flatpakContainer.height = 46
+            } else {
+                flatpakContainer.height = Math.min(root.flatpakUpdates.length * 38 + 8, 180)
+            }
+        }
+    }
+
     // ── Periodic refresh ──────────────────────────────────────────────────────
     Timer {
         interval: root.refreshMins * 60000
@@ -32,22 +66,50 @@ PluginComponent {
         onTriggered: root.checkUpdates()
     }
 
-    // ── Update check functions ────────────────────────────────────────────────
+    // ── Update check functions ───────────────────────────────────────────────
     function checkUpdates() {
         root.dnfChecking = true
+        root.dnfListComplete = false
+        root.dnfUpdates = []
         Proc.runCommand("pkgUpdate.dnf", ["sh", "-c", "dnf list --upgrades --color=never 2>/dev/null"], (stdout, exitCode) => {
             root.dnfUpdates = parseDnfPackages(stdout)
             root.dnfChecking = false
+            root.dnfListComplete = true
+            dnfHeightDebounce.restart()
         }, 100)
 
         if (root.showFlatpak) {
             root.flatpakChecking = true
-            Proc.runCommand("pkgUpdate.flatpak", ["sh", "-c", "flatpak remote-ls --updates 2>/dev/null"], (stdout, exitCode) => {
-                root.flatpakUpdates = parseFlatpakApps(stdout)
-                root.flatpakChecking = false
+            root.flatpakListComplete = false
+            root.flatpakUpdates = []
+            Proc.runCommand("pkgUpdate.flatpakInstalled", ["sh", "-c", "flatpak list --columns=application,version 2>/dev/null"], (installedOut, installedCode) => {
+                const installed = {}
+                if (installedOut && installedOut.trim()) {
+                    installedOut.trim().split('\n').forEach(line => {
+                        const parts = line.trim().split('\t')
+                        if (parts.length >= 2) {
+                            installed[parts[0]] = parts[1]
+                        }
+                    })
+                }
+                Proc.runCommand("pkgUpdate.flatpakUpdates", ["sh", "-c", "flatpak remote-ls --updates 2>/dev/null"], (updatesOut, updatesCode) => {
+                    const rawUpdates = parseFlatpakApps(updatesOut)
+                    root.flatpakUpdates = rawUpdates.filter(app => {
+                        if (!app.name || app.name.length === 0)
+                            return false
+                        const installedVersion = installed[app.name]
+                        if (!installedVersion || installedVersion.length === 0)
+                            return false
+                        return true
+                    })
+                    root.flatpakChecking = false
+                    root.flatpakListComplete = true
+                    flatpakHeightDebounce.restart()
+                }, 100)
             }, 100)
         } else {
             root.flatpakChecking = false
+            root.flatpakListComplete = true
         }
     }
 
@@ -350,8 +412,9 @@ PluginComponent {
 
             // ── DNF update list ──────────────────────────────────────────────
             StyledRect {
+                id: dnfContainer
                 width: parent.width
-                height: root.dnfChecking ? 52 : (root.dnfUpdates.length === 0 ? 46 : Math.min(root.dnfUpdates.length * 38 + 8, 180))
+                height: 52
                 radius: Theme.cornerRadius * 1.5
                 color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
                 border.width: 1
@@ -360,7 +423,7 @@ PluginComponent {
 
                 Behavior on height {
                     NumberAnimation {
-                        duration: 200
+                        duration: 250
                         easing.type: Easing.OutCubic
                     }
                 }
@@ -562,8 +625,9 @@ PluginComponent {
 
             // ── Flatpak update list ──────────────────────────────────────────
             StyledRect {
+                id: flatpakContainer
                 width: parent.width
-                height: root.flatpakChecking ? 52 : (root.flatpakUpdates.length === 0 ? 46 : Math.min(root.flatpakUpdates.length * 38 + 8, 180))
+                height: 52
                 radius: Theme.cornerRadius * 1.5
                 color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
                 border.width: 1
@@ -573,7 +637,7 @@ PluginComponent {
 
                 Behavior on height {
                     NumberAnimation {
-                        duration: 200
+                        duration: 250
                         easing.type: Easing.OutCubic
                     }
                 }
