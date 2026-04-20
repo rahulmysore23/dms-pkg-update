@@ -13,8 +13,6 @@ PluginComponent {
     property var flatpakUpdates: []
     property bool dnfChecking: true
     property bool flatpakChecking: true
-    property bool dnfListComplete: false
-    property bool flatpakListComplete: false
 
     // ── Settings (from plugin data) ───────────────────────────────────────────
     property string terminalApp: pluginData.terminalApp || "alacritty"
@@ -24,38 +22,6 @@ PluginComponent {
     property int totalUpdates: dnfUpdates.length + (showFlatpak ? flatpakUpdates.length : 0)
 
     popoutWidth: 480
-
-    // ── Debounce timer for height animations ─────────────────────────────────
-    property int pendingDnfHeight: 0
-    property int pendingFlatpakHeight: 0
-
-    Timer {
-        id: dnfHeightDebounce
-        interval: 150
-        onTriggered: {
-            if (root.dnfChecking) {
-                dnfContainer.height = 52
-            } else if (root.dnfUpdates.length === 0) {
-                dnfContainer.height = 46
-            } else {
-                dnfContainer.height = Math.min(root.dnfUpdates.length * 38 + 8, 180)
-            }
-        }
-    }
-
-    Timer {
-        id: flatpakHeightDebounce
-        interval: 150
-        onTriggered: {
-            if (root.flatpakChecking) {
-                flatpakContainer.height = 52
-            } else if (root.flatpakUpdates.length === 0) {
-                flatpakContainer.height = 46
-            } else {
-                flatpakContainer.height = Math.min(root.flatpakUpdates.length * 38 + 8, 180)
-            }
-        }
-    }
 
     // ── Periodic refresh ──────────────────────────────────────────────────────
     Timer {
@@ -69,47 +35,36 @@ PluginComponent {
     // ── Update check functions ───────────────────────────────────────────────
     function checkUpdates() {
         root.dnfChecking = true
-        root.dnfListComplete = false
-        root.dnfUpdates = []
-        Proc.runCommand("pkgUpdate.dnf", ["sh", "-c", "dnf list --upgrades --color=never 2>/dev/null"], (stdout, exitCode) => {
+        Proc.runCommand("pkgUpdate.dnf", ["sh", "-c", "dnf list --upgrades --color=never --assumeyes 2>/dev/null"], (stdout, exitCode) => {
             root.dnfUpdates = parseDnfPackages(stdout)
             root.dnfChecking = false
-            root.dnfListComplete = true
-            dnfHeightDebounce.restart()
         }, 100)
 
         if (root.showFlatpak) {
             root.flatpakChecking = true
-            root.flatpakListComplete = false
-            root.flatpakUpdates = []
-            Proc.runCommand("pkgUpdate.flatpakInstalled", ["sh", "-c", "flatpak list --columns=application,version 2>/dev/null"], (installedOut, installedCode) => {
+            Proc.runCommand("pkgUpdate.flatpakInstalled", ["sh", "-c", "flatpak list --app --columns=application,version 2>/dev/null"], (installedOut, installedCode) => {
                 const installed = {}
                 if (installedOut && installedOut.trim()) {
                     installedOut.trim().split('\n').forEach(line => {
                         const parts = line.trim().split('\t')
-                        if (parts.length >= 2) {
+                        if (parts.length >= 2 && parts[1] && parts[1] !== '-') {
                             installed[parts[0]] = parts[1]
                         }
                     })
                 }
-                Proc.runCommand("pkgUpdate.flatpakUpdates", ["sh", "-c", "flatpak remote-ls --updates 2>/dev/null"], (updatesOut, updatesCode) => {
+                Proc.runCommand("pkgUpdate.flatpakUpdates", ["sh", "-c", "flatpak remote-ls --updates --app --columns=application,version,origin 2>/dev/null"], (updatesOut, updatesCode) => {
                     const rawUpdates = parseFlatpakApps(updatesOut)
                     root.flatpakUpdates = rawUpdates.filter(app => {
                         if (!app.name || app.name.length === 0)
                             return false
-                        const installedVersion = installed[app.name]
-                        if (!installedVersion || installedVersion.length === 0)
-                            return false
-                        return true
+                        // Must be an installed application (excludes runtimes/extensions)
+                        return installed.hasOwnProperty(app.name)
                     })
                     root.flatpakChecking = false
-                    root.flatpakListComplete = true
-                    flatpakHeightDebounce.restart()
                 }, 100)
             }, 100)
         } else {
             root.flatpakChecking = false
-            root.flatpakListComplete = true
         }
     }
 
@@ -133,10 +88,10 @@ PluginComponent {
         if (!stdout || stdout.trim().length === 0)
             return []
         return stdout.trim().split('\n').filter(line => line.trim().length > 0).map(line => {
-            const parts = line.trim().split(/\t|\s{2,}/)
+            const parts = line.trim().split('\t')
             return {
                 name: parts[0] || '',
-                branch: parts[1] || '',
+                version: parts[1] || '',
                 origin: parts[2] || ''
             }
         }).filter(a => a.name.length > 0)
@@ -414,7 +369,7 @@ PluginComponent {
             StyledRect {
                 id: dnfContainer
                 width: parent.width
-                height: 52
+                height: (root.dnfChecking && root.dnfUpdates.length === 0) ? 52 : (root.dnfUpdates.length === 0 ? 46 : Math.min(root.dnfUpdates.length * 38 + 8, 180))
                 radius: Theme.cornerRadius * 1.5
                 color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
                 border.width: 1
@@ -431,7 +386,7 @@ PluginComponent {
                 Row {
                     anchors.centerIn: parent
                     spacing: Theme.spacingS
-                    visible: root.dnfChecking
+                    visible: root.dnfChecking && root.dnfUpdates.length === 0
 
                     DankIcon {
                         name: "sync"
@@ -474,7 +429,7 @@ PluginComponent {
                     clip: true
                     model: root.dnfUpdates
                     spacing: 2
-                    visible: !root.dnfChecking && root.dnfUpdates.length > 0
+                    visible: root.dnfUpdates.length > 0
 
                     delegate: Item {
                         width: ListView.view.width
@@ -627,7 +582,7 @@ PluginComponent {
             StyledRect {
                 id: flatpakContainer
                 width: parent.width
-                height: 52
+                height: (root.flatpakChecking && root.flatpakUpdates.length === 0) ? 52 : (root.flatpakUpdates.length === 0 ? 46 : Math.min(root.flatpakUpdates.length * 38 + 8, 180))
                 radius: Theme.cornerRadius * 1.5
                 color: Qt.rgba(Theme.surfaceContainer.r, Theme.surfaceContainer.g, Theme.surfaceContainer.b, 0.5)
                 border.width: 1
@@ -645,7 +600,7 @@ PluginComponent {
                 Row {
                     anchors.centerIn: parent
                     spacing: Theme.spacingS
-                    visible: root.flatpakChecking
+                    visible: root.flatpakChecking && root.flatpakUpdates.length === 0
 
                     DankIcon {
                         name: "sync"
@@ -688,7 +643,7 @@ PluginComponent {
                     clip: true
                     model: root.flatpakUpdates
                     spacing: 2
-                    visible: !root.flatpakChecking && root.flatpakUpdates.length > 0
+                    visible: root.flatpakUpdates.length > 0
 
                     delegate: Item {
                         width: ListView.view.width

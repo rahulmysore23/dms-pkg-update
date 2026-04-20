@@ -3,7 +3,7 @@
     "id": "pkgUpdate",
     "name": "Package Updates",
     "description": "Check and manage DNF and Flatpak package updates from the bar.",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "author": "Rahul Mysore",
     "license": "MIT",
     "icon": "system_update",
