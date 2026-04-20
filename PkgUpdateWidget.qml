@@ -42,25 +42,32 @@ PluginComponent {
 
         if (root.showFlatpak) {
             root.flatpakChecking = true
-            Proc.runCommand("pkgUpdate.flatpakInstalled", ["sh", "-c", "flatpak list --app --columns=application,version 2>/dev/null"], (installedOut, installedCode) => {
-                const installed = {}
-                if (installedOut && installedOut.trim()) {
-                    installedOut.trim().split('\n').forEach(line => {
-                        const parts = line.trim().split('\t')
-                        if (parts.length >= 2 && parts[1] && parts[1] !== '-') {
-                            installed[parts[0]] = parts[1]
-                        }
-                    })
-                }
-                Proc.runCommand("pkgUpdate.flatpakUpdates", ["sh", "-c", "flatpak remote-ls --updates --app --columns=application,version,origin 2>/dev/null"], (updatesOut, updatesCode) => {
-                    const rawUpdates = parseFlatpakApps(updatesOut)
-                    root.flatpakUpdates = rawUpdates.filter(app => {
-                        if (!app.name || app.name.length === 0)
-                            return false
-                        // Must be an installed application (excludes runtimes/extensions)
-                        return installed.hasOwnProperty(app.name)
-                    })
+            Proc.runCommand("pkgUpdate.flatpakCheck", ["sh", "-c", "flatpak update --no-pull --no-deploy -y 2>&1"], (checkOut, checkCode) => {
+                if (!checkOut || checkOut.includes("Nothing to do")) {
+                    root.flatpakUpdates = []
                     root.flatpakChecking = false
+                    return
+                }
+                Proc.runCommand("pkgUpdate.flatpakInstalled", ["sh", "-c", "flatpak list --app --columns=application,origin 2>/dev/null"], (installedOut, installedCode) => {
+                    const installed = {}
+                    if (installedOut && installedOut.trim()) {
+                        installedOut.trim().split('\n').forEach(line => {
+                            const parts = line.trim().split('\t')
+                            if (parts.length >= 2 && parts[1]) {
+                                installed[parts[0]] = parts[1]
+                            }
+                        })
+                    }
+                    Proc.runCommand("pkgUpdate.flatpakUpdates", ["sh", "-c", "flatpak remote-ls --updates --app --columns=application,commit,origin 2>/dev/null"], (updatesOut, updatesCode) => {
+                        const rawUpdates = parseFlatpakApps(updatesOut)
+                        root.flatpakUpdates = rawUpdates.filter(app => {
+                            if (!app.name || app.name.length === 0)
+                                return false
+                            // Must be an installed application (excludes runtimes/extensions)
+                            return installed.hasOwnProperty(app.name)
+                        })
+                        root.flatpakChecking = false
+                    }, 100)
                 }, 100)
             }, 100)
         } else {
@@ -91,7 +98,7 @@ PluginComponent {
             const parts = line.trim().split('\t')
             return {
                 name: parts[0] || '',
-                version: parts[1] || '',
+                commit: parts[1] || '',
                 origin: parts[2] || ''
             }
         }).filter(a => a.name.length > 0)
@@ -100,13 +107,13 @@ PluginComponent {
     // ── Terminal launch ───────────────────────────────────────────────────────
     function runDnfUpdate() {
         root.closePopout()
-        const cmd = "sudo dnf upgrade -y; echo; echo '=== Done. Press Enter to close. ==='; read"
+        const cmd = 'sudo dnf upgrade -y; echo; echo "=== Done. Press Enter to close. ==="; read'
         Quickshell.execDetached(["sh", "-c", root.terminalApp + " -e sh -c '" + cmd + "'"])
     }
 
     function runFlatpakUpdate() {
         root.closePopout()
-        const cmd = "flatpak update -y; echo; echo '=== Done. Press Enter to close. ==='; read"
+        const cmd = 'flatpak update -y; echo; echo "=== Done. Press Enter to close. ==="; read'
         Quickshell.execDetached(["sh", "-c", root.terminalApp + " -e sh -c '" + cmd + "'"])
     }
 
